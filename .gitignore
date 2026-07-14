@@ -1,0 +1,10 @@
+/levels/
+/build/
+/out/
+/test-output/
+*.obj
+*.res
+*.exe
+*.pdb
+*.ilk
+*.idb

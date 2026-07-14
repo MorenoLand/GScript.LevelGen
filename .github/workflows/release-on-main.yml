@@ -1,0 +1,83 @@
+name: Version And Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Bump Patch Version
+    runs-on: windows-2022
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]') }}
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Bump version
+        id: bump
+        shell: pwsh
+        run: |
+          $version = ./scripts/bump-version.ps1
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Commit version and tag
+        shell: pwsh
+        run: |
+          $version = "${{ steps.bump.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump version to v$version [skip ci]"
+          git tag "v$version"
+          git push origin HEAD:main
+          git push origin "v$version"
+  windows:
+    name: Windows Release Build
+    runs-on: windows-2022
+    needs: version
+    steps:
+      - name: Checkout bumped tag
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - name: Configure
+        run: cmake --preset windows-release
+      - name: Build
+        run: cmake --build --preset windows-release
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item bin/LevelGen.exe dist/LevelGen.exe
+          Compress-Archive -Path dist/LevelGen.exe -DestinationPath "dist/LevelGen-${{ needs.version.outputs.version }}-windows-x64.zip" -Force
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LevelGen-${{ needs.version.outputs.version }}-windows-x64
+          path: dist/LevelGen-${{ needs.version.outputs.version }}-windows-x64.zip
+          if-no-files-found: error
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - version
+      - windows
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: LevelGen-${{ needs.version.outputs.version }}-windows-x64
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gh release create "v${VERSION}" dist/* --repo "${GITHUB_REPOSITORY}" --verify-tag --title "Level Generator v${VERSION}" --notes "Automated Windows build."

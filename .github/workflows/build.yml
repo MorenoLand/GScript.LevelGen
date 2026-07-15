@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install PNG dependency
-        run: sudo apt-get update && sudo apt-get install -y libpng-dev ninja-build
+        run: sudo apt-get update && sudo apt-get install -y libpng-dev ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxtst-dev libxi-dev libxss-dev libwayland-dev libxkbcommon-dev wayland-protocols libdbus-1-dev libudev-dev
       - name: Configure
         run: cmake --preset unix-release
       - name: Build

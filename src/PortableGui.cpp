@@ -53,7 +53,7 @@ int main(int argc, char** argv)
 {
     if (argc > 1) return RunLevelGenCli(argc, argv);
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) return 1;
-    g_gui.window = SDL_CreateWindow("Level Generator", 560, 235, SDL_WINDOW_NOT_RESIZABLE);
+    g_gui.window = SDL_CreateWindow("Level Generator", 560, 235, 0);
     g_gui.renderer = g_gui.window ? SDL_CreateRenderer(g_gui.window, nullptr) : nullptr;
     if (!g_gui.renderer) return 1;
     std::filesystem::path base(SDL_GetBasePath()); base = base.parent_path();

@@ -284,7 +284,7 @@ static void RenderComplexEdges(const std::vector<TilePattern>& p)
         else { int d = nw + ne + sw + se; if (d == 2) { if (nw && se) BlitPattern(p[13], x * 6, y * 6); else if (ne && sw) BlitPattern(p[14], x * 6, y * 6); } else if (d == 1) { if (nw) BlitPattern(p[9], x * 6, y * 6); else if (sw) BlitPattern(p[10], x * 6, y * 6); else if (se) BlitPattern(p[11], x * 6, y * 6); else BlitPattern(p[12], x * 6, y * 6); } else BlitPattern(p[15], x * 6, y * 6); }
     }
 }
-static void RenderRedTerrain()
+static void RenderCliffTerrain()
 {
     static const std::vector<TilePattern> patterns = {
         MakePat(1, { 0xffff }),
@@ -306,7 +306,7 @@ static void RenderRedTerrain()
     };
     RenderComplexEdges(patterns);
 }
-static void RenderBlueTerrain()
+static void RenderWaterTerrain()
 {
     static const std::vector<TilePattern> patterns = {
         MakePat(1, { 0xffff }),
@@ -1131,7 +1131,7 @@ static void PaintMap(const MapImage& image)
     g_maskW = (g_levelCols * TILES_PER_LEVEL + 5) / 6;
     g_maskH = (g_levelRows * TILES_PER_LEVEL + 5) / 6;
     BuildTerrainMask(working, 128, 0, 0);
-    RenderRedTerrain();
+    RenderCliffTerrain();
     for (int x = 0; x < working.width; ++x) for (int y = 0; y < working.height; ++y) {
         RenderFlowers(working, x, y);
         RenderSandStone(working, x, y);
@@ -1139,7 +1139,7 @@ static void PaintMap(const MapImage& image)
         RenderSwampsAndBushes(working, x, y);
     }
     BuildTerrainMask(working, 0, 0, 255);
-    RenderBlueTerrain();
+    RenderWaterTerrain();
     BuildOverlayMask(working, 181, 239, 189);
     RenderMountainTerrain();
     BuildOverlayMask(working, 196, 0, 0);

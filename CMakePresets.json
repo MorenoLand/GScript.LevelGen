@@ -13,6 +13,20 @@
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Release"
       }
+    },
+    {
+      "name": "unix-release",
+      "displayName": "macOS and Linux Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/unix-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
     }
   ],
   "buildPresets": [
@@ -20,6 +34,13 @@
       "name": "windows-release",
       "configurePreset": "windows-release",
       "configuration": "Release",
+      "targets": [
+        "LevelGen"
+      ]
+    },
+    {
+      "name": "unix-release",
+      "configurePreset": "unix-release",
       "targets": [
         "LevelGen"
       ]

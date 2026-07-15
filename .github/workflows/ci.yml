@@ -21,3 +21,39 @@ jobs:
           name: LevelGen-windows-x64
           path: bin/LevelGen.exe
           if-no-files-found: error
+
+  macos:
+    name: macOS Release Build
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset unix-release
+      - name: Build
+        run: cmake --build --preset unix-release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LevelGen-macos
+          path: bin/LevelGen
+          if-no-files-found: error
+
+  linux:
+    name: Linux Release Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install PNG dependency
+        run: sudo apt-get update && sudo apt-get install -y libpng-dev ninja-build
+      - name: Configure
+        run: cmake --preset unix-release
+      - name: Build
+        run: cmake --build --preset unix-release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LevelGen-linux-x64
+          path: bin/LevelGen
+          if-no-files-found: error

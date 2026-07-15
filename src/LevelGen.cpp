@@ -1,6 +1,7 @@
 // Graal Level Generator
 // Original software by Stefan Knorr.
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>
@@ -8,6 +9,17 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <gdiplus.h>
+#else
+#include <png.h>
+#include <cstdint>
+#include <filesystem>
+using BYTE = std::uint8_t;
+using COLORREF = std::uint32_t;
+static constexpr COLORREF RGB(BYTE r, BYTE g, BYTE b) { return (COLORREF)r | ((COLORREF)g << 8) | ((COLORREF)b << 16); }
+static constexpr BYTE GetRValue(COLORREF color) { return (BYTE)(color & 0xff); }
+static constexpr BYTE GetGValue(COLORREF color) { return (BYTE)((color >> 8) & 0xff); }
+static constexpr BYTE GetBValue(COLORREF color) { return (BYTE)((color >> 16) & 0xff); }
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -18,9 +30,12 @@
 #include <memory>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
+#ifdef _WIN32
 #pragma comment(lib, "gdiplus.lib")
 using namespace Gdiplus;
+#endif
 
 // -----------------------------------------------------------------------------
 //  Graal .nw level model
@@ -107,6 +122,11 @@ struct TilePattern {
 static int g_levelCols = 0;
 static int g_levelRows = 0;
 static std::vector<GraalLevel> g_levels;
+
+static std::string JoinPath(const std::string& folder, const std::string& filename)
+{
+    return (std::filesystem::path(folder) / filename).string();
+}
 
 // Stamp `pattern` so its top-left lands at global tile (gx, gy).
 static void BlitPattern(const TilePattern& pat, int gx, int gy)
@@ -491,7 +511,7 @@ static void BuildLevelGrid(const std::string& outputDir,
 
             std::string path = outputDir + "\\" + LevelFileStem(filePrefix, L.name) + ".nw";
 
-            std::string baselinePath = baselineFolder.empty() ? path : baselineFolder + "\\" + LevelFileStem(filePrefix, L.name) + ".nw";
+            std::string baselinePath = baselineFolder.empty() ? path : JoinPath(baselineFolder, LevelFileStem(filePrefix, L.name) + ".nw");
             if (LoadLevel(L, baselinePath)) { L.existing = true; continue; }
 
             if (createLinks) {
@@ -893,7 +913,8 @@ static bool VerifyBinaryRoundTrip()
     if (!WriteLevelBinary(written, path)) return false;
     GraalLevel loaded;
     bool ok = LoadLevel(loaded, path) && std::memcmp(written.tiles, loaded.tiles, sizeof(written.tiles)) == 0;
-    DeleteFileA(path);
+    std::error_code removeError;
+    std::filesystem::remove(path, removeError);
     return ok;
 }
 
@@ -973,6 +994,7 @@ static void BuildOverlayMask(const MapImage& image, BYTE r, BYTE g, BYTE b)
     }
 }
 
+#ifdef _WIN32
 static std::wstring ToWide(const std::string& value)
 {
     if (value.empty()) return L"";
@@ -1011,9 +1033,18 @@ static bool EnsureDirectory(const std::string& path)
     int result = SHCreateDirectoryExA(nullptr, absolute, nullptr);
     return result == ERROR_SUCCESS || result == ERROR_ALREADY_EXISTS || result == ERROR_FILE_EXISTS;
 }
+#else
+static bool EnsureDirectory(const std::string& path)
+{
+    std::error_code error;
+    std::filesystem::create_directories(path, error);
+    return !error && std::filesystem::is_directory(path);
+}
+#endif
 
 static bool LoadMapImage(const std::string& path, MapImage& image, std::string& err)
 {
+#ifdef _WIN32
     static ULONG_PTR token = 0;
     if (!token) {
         GdiplusStartupInput input;
@@ -1045,6 +1076,29 @@ static bool LoadMapImage(const std::string& path, MapImage& image, std::string& 
         }
     }
     return true;
+#else
+    FILE* file = std::fopen(path.c_str(), "rb");
+    if (!file) { err = "Could not open the map image."; return false; }
+    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+    png_infop info = png ? png_create_info_struct(png) : nullptr;
+    if (!png || !info) { if (png) png_destroy_read_struct(&png, nullptr, nullptr); std::fclose(file); err = "Could not start the PNG decoder."; return false; }
+    if (setjmp(png_jmpbuf(png))) { png_destroy_read_struct(&png, &info, nullptr); std::fclose(file); err = "Could not decode the map PNG."; return false; }
+    png_init_io(png, file); png_read_info(png, info);
+    png_uint_32 width = 0, height = 0; int depth = 0, colourType = 0;
+    png_get_IHDR(png, info, &width, &height, &depth, &colourType, nullptr, nullptr, nullptr);
+    if (depth == 16) png_set_strip_16(png);
+    if (colourType == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(png);
+    if (colourType == PNG_COLOR_TYPE_GRAY && depth < 8) png_set_expand_gray_1_2_4_to_8(png);
+    if (png_get_valid(png, info, PNG_INFO_tRNS)) png_set_tRNS_to_alpha(png);
+    if (colourType == PNG_COLOR_TYPE_GRAY || colourType == PNG_COLOR_TYPE_GRAY_ALPHA) png_set_gray_to_rgb(png);
+    png_read_update_info(png, info);
+    if (!width || !height) { png_destroy_read_struct(&png, &info, nullptr); std::fclose(file); err = "The map image has no pixels."; return false; }
+    image.width = (int)width; image.height = (int)height; image.rgb.resize((size_t)width * height * 3);
+    size_t rowBytes = png_get_rowbytes(png, info); std::vector<BYTE> row(rowBytes);
+    int channels = png_get_channels(png, info);
+    for (int y = 0; y < image.height; ++y) { png_read_row(png, row.data(), nullptr); for (int x = 0; x < image.width; ++x) { size_t in = (size_t)x * channels, out = ((size_t)y * image.width + x) * 3; image.rgb[out] = row[in]; image.rgb[out + 1] = row[in + 1]; image.rgb[out + 2] = row[in + 2]; } }
+    png_read_end(png, nullptr); png_destroy_read_struct(&png, &info, nullptr); std::fclose(file); return true;
+#endif
 }
 
 static unsigned short TileForColour(COLORREF color)
@@ -1138,8 +1192,8 @@ static bool GenerateWorld(const GenOptions& opt, std::string& err)
         err = "Could not create the output folder.";
         return false;
     }
-    DWORD outputAttr = GetFileAttributesA(opt.outputFolder.c_str());
-    if (outputAttr == INVALID_FILE_ATTRIBUTES || !(outputAttr & FILE_ATTRIBUTE_DIRECTORY)) {
+    std::error_code outputError;
+    if (!std::filesystem::is_directory(opt.outputFolder, outputError)) {
         err = "The output path is not a folder.";
         return false;
     }
@@ -1161,14 +1215,14 @@ static bool GenerateWorld(const GenOptions& opt, std::string& err)
 
     // Write every level as the original text-compatible GLEVNW01 format.
     for (GraalLevel& L : g_levels) {
-        std::string path = opt.outputFolder + "\\" + LevelFileStem(opt.filePrefix, L.name) + ".nw";
+        std::string path = JoinPath(opt.outputFolder, LevelFileStem(opt.filePrefix, L.name) + ".nw");
         if (!WriteLevelText(L, path)) {
             err = "Could not write " + path;
             return false;
         }
     }
 
-    if (!WriteGmap(opt.outputFolder + "\\" + GmapName(opt.filePrefix) + ".gmap", opt.filePrefix)) {
+    if (!WriteGmap(JoinPath(opt.outputFolder, GmapName(opt.filePrefix) + ".gmap"), opt.filePrefix)) {
         err = "Could not write the generated .gmap file.";
         return false;
     }
@@ -1178,9 +1232,7 @@ static bool GenerateWorld(const GenOptions& opt, std::string& err)
 }
 
 
-// =============================================================================
-//  Minimal Win32 GUI mirroring the TMapOptions form from the DFM
-// =============================================================================
+#ifdef _WIN32
 struct AppWindow {
     HWND hMain = nullptr;
     HWND hEditImage = nullptr,  hBtnBrowseImage = nullptr;
@@ -1532,3 +1584,22 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR commandLine, int show)
     }
     return 0;
 }
+#else
+int main(int argc, char** argv)
+{
+    if (argc == 2 && std::strcmp(argv[1], "--verify-binary") == 0) return VerifyBinaryRoundTrip() ? 0 : 1;
+    if (argc < 2 || std::strcmp(argv[1], "--cli") != 0) { std::fprintf(stderr, "Use: LevelGen --cli --image <map.png> --output <folder> --prefix <name> [--baseline <folder>] [--no-links]\n"); return 2; }
+    GenOptions options;
+    for (int i = 2; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--image") == 0 && i + 1 < argc) options.imagePath = argv[++i];
+        else if (std::strcmp(argv[i], "--output") == 0 && i + 1 < argc) options.outputFolder = argv[++i];
+        else if (std::strcmp(argv[i], "--prefix") == 0 && i + 1 < argc) options.filePrefix = argv[++i];
+        else if (std::strcmp(argv[i], "--baseline") == 0 && i + 1 < argc) options.baselineFolder = argv[++i];
+        else if (std::strcmp(argv[i], "--no-links") == 0) options.createLinks = false;
+        else return 2;
+    }
+    std::string error;
+    if (GenerateWorld(options, error)) return 0;
+    std::fprintf(stderr, "%s\n", error.c_str()); return 1;
+}
+#endif

@@ -5,9 +5,9 @@
       "name": "windows-release",
       "displayName": "Windows Release",
       "generator": "Visual Studio 17 2022",
-      "binaryDir": "${sourceDir}/build/windows-release",
+      "binaryDir": "${sourceDir}/build/windows-x86-release",
       "architecture": {
-        "value": "x64",
+        "value": "Win32",
         "strategy": "external"
       },
       "cacheVariables": {

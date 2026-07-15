@@ -15,11 +15,16 @@ jobs:
         run: cmake --preset windows-release
       - name: Build
         run: cmake --build --preset windows-release
+      - name: Bundle
+        shell: pwsh
+        run: |
+          cmake --install build/windows-x86-release --config Release --prefix dist/LevelGen
+          Compress-Archive -Path dist/LevelGen/* -DestinationPath dist/LevelGen-windows-x86.zip -Force
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LevelGen-windows-x64
-          path: bin/LevelGen.exe
+          name: LevelGen-windows-x86
+          path: dist/LevelGen-windows-x86.zip
           if-no-files-found: error
 
   macos:
@@ -32,11 +37,15 @@ jobs:
         run: cmake --preset unix-release
       - name: Build
         run: cmake --build --preset unix-release
+      - name: Bundle
+        run: |
+          cmake --install build/unix-release --prefix dist/LevelGen
+          tar -czf LevelGen-macos.tar.gz -C dist LevelGen
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: LevelGen-macos
-          path: bin/LevelGen
+          path: LevelGen-macos.tar.gz
           if-no-files-found: error
 
   linux:
@@ -51,9 +60,13 @@ jobs:
         run: cmake --preset unix-release
       - name: Build
         run: cmake --build --preset unix-release
+      - name: Bundle
+        run: |
+          cmake --install build/unix-release --prefix dist/LevelGen
+          tar -czf LevelGen-linux-x64.tar.gz -C dist LevelGen
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: LevelGen-linux-x64
-          path: bin/LevelGen
+          path: LevelGen-linux-x64.tar.gz
           if-no-files-found: error

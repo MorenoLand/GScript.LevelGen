@@ -1,6 +1,5 @@
 #include "LevelGenPortable.h"
 #include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -8,7 +7,6 @@
 struct GuiState {
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
-    TTF_Font* font = nullptr;
     std::string image, output, prefix = "myworld_", status;
     int focused = -1;
     bool links = true;
@@ -22,12 +20,8 @@ static void Outline(float x, float y, float w, float h, Uint8 r, Uint8 g, Uint8 
 
 static void Text(float x, float y, const std::string& value, Uint8 r = 24, Uint8 g = 24, Uint8 b = 24)
 {
-    if (value.empty() || !g_gui.font) return;
-    SDL_Surface* surface = TTF_RenderText_Blended(g_gui.font, value.c_str(), value.size(), SDL_Color{r, g, b, 255});
-    if (!surface) return;
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(g_gui.renderer, surface);
-    if (texture) { SDL_FRect dst{x, y, (float)surface->w, (float)surface->h}; SDL_RenderTexture(g_gui.renderer, texture, nullptr, &dst); SDL_DestroyTexture(texture); }
-    SDL_DestroySurface(surface);
+    if (value.empty()) return;
+    SetColor(r, g, b); SDL_RenderDebugText(g_gui.renderer, x, y, value.c_str());
 }
 
 static std::string& Field(int index) { return index == 0 ? g_gui.image : index == 1 ? g_gui.output : g_gui.prefix; }
@@ -58,12 +52,10 @@ static void Draw()
 int main(int argc, char** argv)
 {
     if (argc > 1) return RunLevelGenCli(argc, argv);
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) || !TTF_Init()) return 1;
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) return 1;
     g_gui.window = SDL_CreateWindow("Level Generator", 560, 235, SDL_WINDOW_NOT_RESIZABLE);
     g_gui.renderer = g_gui.window ? SDL_CreateRenderer(g_gui.window, nullptr) : nullptr;
-    const char* fonts[] = {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf"};
-    for (const char* path : fonts) if (std::filesystem::exists(path)) { g_gui.font = TTF_OpenFont(path, 14); if (g_gui.font) break; }
-    if (!g_gui.renderer || !g_gui.font) return 1;
+    if (!g_gui.renderer) return 1;
     std::filesystem::path base(SDL_GetBasePath()); base = base.parent_path();
     g_gui.image = (base / "examples" / "levelgen.png").string(); g_gui.output = (base / "levels").string();
     bool running = true; SDL_StartTextInput(g_gui.window);
@@ -82,5 +74,5 @@ int main(int argc, char** argv)
         }
         Draw(); SDL_Delay(16);
     }
-    TTF_CloseFont(g_gui.font); SDL_DestroyRenderer(g_gui.renderer); SDL_DestroyWindow(g_gui.window); TTF_Quit(); SDL_Quit(); return 0;
+    SDL_DestroyRenderer(g_gui.renderer); SDL_DestroyWindow(g_gui.window); SDL_Quit(); return 0;
 }

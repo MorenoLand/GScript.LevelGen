@@ -1,4 +1,4 @@
-name: build
+name: Build LevelGen on Windows macOS and Linux
 
 on:
   push:
@@ -10,13 +10,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
+        run: cmake --preset windows-release
       - name: Build
-        run: cmake --build build --config Release
-      - name: Bundle
-        run: cmake --install build --config Release --prefix out
-      - name: Upload bundle
+        run: cmake --build --preset windows-release
+      - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: LevelGen-windows-x86
-          path: out
+          name: LevelGen-windows-x64
+          path: bin/LevelGen.exe
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset unix-release
+      - name: Build
+        run: cmake --build --preset unix-release
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: LevelGen-macos
+          path: bin/LevelGen
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PNG dependency
+        run: sudo apt-get update && sudo apt-get install -y libpng-dev ninja-build
+      - name: Configure
+        run: cmake --preset unix-release
+      - name: Build
+        run: cmake --build --preset unix-release
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: LevelGen-linux-x64
+          path: bin/LevelGen
+          if-no-files-found: error

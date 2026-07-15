@@ -264,7 +264,7 @@ static void RenderSandTerrain()
     }
 }
 
-static void RenderBlueInterior()
+static void RenderWaterInterior()
 {
     static const TilePattern interior = MakePat(6, { 0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142,0x142 });
     for (int x = 0; x < g_maskW; ++x) for (int y = 0; y < g_maskH; ++y) {
@@ -941,14 +941,14 @@ static const ColourEntry kColourTable[] = {
     {   0, 179, 179, "puddle-stone" },
 };
 
-static bool IsTerrainSource(COLORREF color, bool redPass)
+static bool IsTerrainSource(COLORREF color, bool cliffPass)
 {
-    return IsColourNear(color, 24, 140, 24) || IsColourNear(color, redPass ? 128 : 0, 0, redPass ? 0 : 255) || (redPass && IsColourNear(color, 0, 106, 0));
+    return IsColourNear(color, 24, 140, 24) || IsColourNear(color, cliffPass ? 128 : 0, 0, cliffPass ? 0 : 255) || (cliffPass && IsColourNear(color, 0, 106, 0));
 }
 
 static void BuildTerrainMask(MapImage& image, BYTE r, BYTE g, BYTE b)
 {
-    bool redPass = r == 128 && g == 0 && b == 0;
+    bool cliffPass = r == 128 && g == 0 && b == 0;
     g_mask.assign(g_maskH, std::vector<char>(g_maskW));
     for (int x = 0; x < g_maskW; ++x) for (int y = 0; y < g_maskH; ++y) {
         int x0 = x * 6 + 2 < image.width ? x * 6 + 2 : image.width - 1;
@@ -959,14 +959,14 @@ static void BuildTerrainMask(MapImage& image, BYTE r, BYTE g, BYTE b)
         COLORREF c = image.At(x0, y1);
         COLORREF d = image.At(x1, y1);
         bool noTarget = !IsColourNear(a, r, g, b) && !IsColourNear(b0, r, g, b) && !IsColourNear(c, r, g, b) && !IsColourNear(d, r, g, b);
-        g_mask[y][x] = !noTarget && IsTerrainSource(a, redPass) && IsTerrainSource(b0, redPass) && IsTerrainSource(c, redPass) && IsTerrainSource(d, redPass);
+        g_mask[y][x] = !noTarget && IsTerrainSource(a, cliffPass) && IsTerrainSource(b0, cliffPass) && IsTerrainSource(c, cliffPass) && IsTerrainSource(d, cliffPass);
         if (g_mask[y][x]) {
             COLORREF fill = a;
             if (!IsColourNear(a, r, g, b) && !IsColourNear(b0, r, g, b)) {
                 if (IsColourNear(c, r, g, b)) fill = c;
             }
-            int writeX0 = redPass ? x0 : x * 6;
-            int writeX1 = redPass ? x1 : (x * 6 + 5 < image.width ? x * 6 + 5 : image.width - 1);
+            int writeX0 = cliffPass ? x0 : x * 6;
+            int writeX1 = cliffPass ? x1 : (x * 6 + 5 < image.width ? x * 6 + 5 : image.width - 1);
             for (int py = y * 6; py <= y1; ++py) for (int px = writeX0; px <= writeX1; ++px) {
                 size_t p = ((size_t)py * image.width + px) * 3;
                 image.rgb[p] = GetRValue(fill); image.rgb[p + 1] = GetGValue(fill); image.rgb[p + 2] = GetBValue(fill);

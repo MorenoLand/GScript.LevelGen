@@ -1255,6 +1255,7 @@ struct DesignerState {
     bool panning = false;
     int panStartX = 0, panStartY = 0, panScrollX = 0, panScrollY = 0;
     COLORREF selected = RGB(24, 140, 24);
+    int selectedPalette = 0, tooltipPalette = -1, tooltipX = 0, tooltipY = 0;
     std::vector<COLORREF> pixels = std::vector<COLORREF>(32 * 32, RGB(24, 140, 24));
 };
 
@@ -1310,6 +1311,17 @@ static bool SaveDesignerPng(const wchar_t* path)
     GdiplusShutdown(token); return ok;
 }
 
+static bool LoadDesignerMap(const wchar_t* path)
+{
+    MapImage image; std::string error;
+    if (!LoadMapImage(ToAnsi(path), image, error) || image.width < 8 || image.height < 8 || image.width > 128 || image.height > 128) return false;
+    g_designer.width = image.width; g_designer.height = image.height; g_designer.pixels.resize((size_t)image.width * image.height);
+    for (int y = 0; y < image.height; ++y) for (int x = 0; x < image.width; ++x) g_designer.pixels[(size_t)y * image.width + x] = image.At(x, y);
+    wchar_t value[16] = {}; wsprintfW(value, L"%d", image.width); SetWindowTextW(g_designer.widthEdit, value);
+    wsprintfW(value, L"%d", image.height); SetWindowTextW(g_designer.heightEdit, value);
+    UpdateDesignerInfo(); UpdateDesignerScrollbars(g_designer.window); InvalidateRect(g_designer.window, nullptr, TRUE); return true;
+}
+
 static void ResetDesigner()
 {
     wchar_t text[16] = {}; GetWindowTextW(g_designer.widthEdit, text, 16); int width = _wtoi(text);
@@ -1345,19 +1357,11 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         HWND reset = CreateWindowW(L"BUTTON", L"New grid", WS_CHILD|WS_VISIBLE, 198, 15, 78, 24, h, (HMENU)203, nullptr, nullptr);
         HWND save = CreateWindowW(L"BUTTON", L"Save map...", WS_CHILD|WS_VISIBLE|BS_DEFPUSHBUTTON, 286, 15, 94, 24, h, (HMENU)204, nullptr, nullptr);
         g_designer.levelsLabel = CreateWindowW(L"STATIC", L"Levels: 1 x 1", WS_CHILD|WS_VISIBLE, 20, 42, 120, 18, h, nullptr, nullptr, nullptr);
-        HWND zoomOut = CreateWindowW(L"BUTTON", L"Zoom -", WS_CHILD|WS_VISIBLE, 200, 42, 62, 22, h, (HMENU)205, nullptr, nullptr);
-        HWND zoomIn = CreateWindowW(L"BUTTON", L"Zoom +", WS_CHILD|WS_VISIBLE, 266, 42, 62, 22, h, (HMENU)206, nullptr, nullptr);
-        g_designer.zoomLabel = CreateWindowW(L"STATIC", L"Zoom: 100%", WS_CHILD|WS_VISIBLE, 334, 45, 75, 18, h, nullptr, nullptr, nullptr);
-        for (HWND c : {g_designer.widthEdit,g_designer.heightEdit,reset,save,g_designer.levelsLabel,zoomOut,zoomIn,g_designer.zoomLabel}) ApplyFont(c);
-        HWND tips = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP|TTS_ALWAYSTIP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, h, nullptr, nullptr, nullptr);
-        SendMessageW(tips, TTM_SETDELAYTIME, TTDT_INITIAL, 0);
-        SendMessageW(tips, TTM_SETDELAYTIME, TTDT_RESHOW, 0);
-        SendMessageW(tips, TTM_SETDELAYTIME, TTDT_AUTOPOP, 30000);
-        for (UINT i = 0; i < sizeof(kDesignerColourNames) / sizeof(kDesignerColourNames[0]); ++i) {
-            TOOLINFOW tool{}; tool.cbSize = sizeof(tool); tool.uFlags = TTF_SUBCLASS; tool.hwnd = h; tool.uId = i + 1;
-            tool.rect = {20 + (int)i * 30, paletteY, 44 + (int)i * 30, paletteY + 24}; tool.lpszText = const_cast<wchar_t*>(kDesignerColourNames[i]);
-            SendMessageW(tips, TTM_ADDTOOLW, 0, (LPARAM)&tool);
-        }
+        HWND load = CreateWindowW(L"BUTTON", L"Load map...", WS_CHILD|WS_VISIBLE, 140, 40, 88, 24, h, (HMENU)207, nullptr, nullptr);
+        HWND zoomOut = CreateWindowW(L"BUTTON", L"Zoom -", WS_CHILD|WS_VISIBLE, 238, 42, 62, 22, h, (HMENU)205, nullptr, nullptr);
+        HWND zoomIn = CreateWindowW(L"BUTTON", L"Zoom +", WS_CHILD|WS_VISIBLE, 304, 42, 62, 22, h, (HMENU)206, nullptr, nullptr);
+        g_designer.zoomLabel = CreateWindowW(L"STATIC", L"Zoom: 100%", WS_CHILD|WS_VISIBLE, 370, 45, 75, 18, h, nullptr, nullptr, nullptr);
+        for (HWND c : {g_designer.widthEdit,g_designer.heightEdit,reset,save,load,g_designer.levelsLabel,zoomOut,zoomIn,g_designer.zoomLabel}) ApplyFont(c);
         UpdateDesignerInfo();
         UpdateDesignerScrollbars(h);
         return 0;
@@ -1365,12 +1369,17 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONDOWN: {
         int x = (int)(short)LOWORD(lp), y = (int)(short)HIWORD(lp);
         if (y >= paletteY && y < paletteY + 24 && x >= 20 && x < 20 + (int)(sizeof(kDesignerColours) / sizeof(kDesignerColours[0])) * 30) {
-            g_designer.selected = kDesignerColours[(x - 20) / 30]; InvalidateRect(h, nullptr, FALSE); return 0;
+            g_designer.selectedPalette = (x - 20) / 30; g_designer.selected = kDesignerColours[g_designer.selectedPalette]; InvalidateRect(h, nullptr, FALSE); return 0;
         }
         SetCapture(h); PaintDesignerCell(x, y);
         return 0;
     }
     case WM_MOUSEMOVE:
+        {
+            int x = (int)(short)LOWORD(lp), y = (int)(short)HIWORD(lp);
+            int hovered = y >= paletteY && y < paletteY + 24 && x >= 20 && x < 20 + (int)(sizeof(kDesignerColours) / sizeof(kDesignerColours[0])) * 30 ? (x - 20) / 30 : -1;
+            if (hovered != g_designer.tooltipPalette || x != g_designer.tooltipX || y != g_designer.tooltipY) { g_designer.tooltipPalette = hovered; g_designer.tooltipX = x; g_designer.tooltipY = y; InvalidateRect(h, nullptr, FALSE); }
+        }
         if (g_designer.panning) {
             g_designer.scrollX = g_designer.panScrollX - ((int)(short)LOWORD(lp) - g_designer.panStartX);
             g_designer.scrollY = g_designer.panScrollY - ((int)(short)HIWORD(lp) - g_designer.panStartY);
@@ -1403,6 +1412,11 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         if (LOWORD(wp) == 203) ResetDesigner();
         if (LOWORD(wp) == 205 && g_designer.zoom > 1) { --g_designer.zoom; UpdateDesignerInfo(); UpdateDesignerScrollbars(h); InvalidateRect(h, nullptr, TRUE); }
         if (LOWORD(wp) == 206 && g_designer.zoom < 3) { ++g_designer.zoom; UpdateDesignerInfo(); UpdateDesignerScrollbars(h); InvalidateRect(h, nullptr, TRUE); }
+        if (LOWORD(wp) == 207) {
+            wchar_t path[MAX_PATH] = L""; OPENFILENAMEW ofn{}; ofn.lStructSize = sizeof(ofn); ofn.hwndOwner = h; ofn.lpstrFile = path; ofn.nMaxFile = MAX_PATH;
+            ofn.lpstrFilter = L"Map images (*.png;*.gif)\0*.png;*.gif\0"; ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+            if (GetOpenFileNameW(&ofn) && !LoadDesignerMap(path)) MessageBoxW(h, L"Map Designer accepts PNG or GIF images from 8 to 128 pixels wide and high.", L"Map Designer", MB_ICONERROR);
+        }
         if (LOWORD(wp) == 204) {
             wchar_t path[MAX_PATH] = L"map.png"; OPENFILENAMEW ofn{}; ofn.lStructSize = sizeof(ofn); ofn.hwndOwner = h;
             ofn.lpstrFile = path; ofn.nMaxFile = MAX_PATH; ofn.lpstrFilter = L"PNG image (*.png)\0*.png\0"; ofn.lpstrDefExt = L"png";
@@ -1418,7 +1432,7 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         TextOutW(dc, 20, 68, L"Palette", 7);
         for (int i = 0; i < (int)(sizeof(kDesignerColours) / sizeof(kDesignerColours[0])); ++i) {
             HBRUSH brush = CreateSolidBrush(kDesignerColours[i]); RECT r{20 + i * 30, paletteY, 44 + i * 30, paletteY + 24}; FillRect(dc, &r, brush); DeleteObject(brush);
-            if (kDesignerColours[i] == g_designer.selected) { InflateRect(&r, 2, 2); FrameRect(dc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH)); }
+            if (i == g_designer.selectedPalette) { InflateRect(&r, 2, 2); FrameRect(dc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH)); }
         }
         int cell = DesignerCellSize();
         int saved = SaveDC(dc); RECT client{}; GetClientRect(h, &client); IntersectClipRect(dc, gridX, gridY, client.right, client.bottom);
@@ -1426,6 +1440,10 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
             HBRUSH brush = CreateSolidBrush(g_designer.pixels[y * g_designer.width + x]); RECT r{gridX + x * cell - g_designer.scrollX, gridY + y * cell - g_designer.scrollY, gridX + (x + 1) * cell - g_designer.scrollX, gridY + (y + 1) * cell - g_designer.scrollY}; FillRect(dc, &r, brush); DeleteObject(brush); FrameRect(dc, &r, (HBRUSH)GetStockObject(GRAY_BRUSH));
         }
         RestoreDC(dc, saved);
+        if (g_designer.tooltipPalette >= 0) {
+            const wchar_t* label = kDesignerColourNames[g_designer.tooltipPalette]; SIZE size{}; GetTextExtentPoint32W(dc, label, (int)wcslen(label), &size);
+            RECT tooltip{g_designer.tooltipX + 12, g_designer.tooltipY + 12, g_designer.tooltipX + size.cx + 20, g_designer.tooltipY + size.cy + 18}; FillRect(dc, &tooltip, (HBRUSH)GetStockObject(WHITE_BRUSH)); FrameRect(dc, &tooltip, (HBRUSH)GetStockObject(BLACK_BRUSH)); TextOutW(dc, tooltip.left + 4, tooltip.top + 3, label, (int)wcslen(label));
+        }
         EndPaint(h, &ps); return 0;
     }
     case WM_DESTROY: g_designer.window = nullptr; return 0;
@@ -1564,7 +1582,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR commandLine, int show)
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return 1;
 
     HWND h = CreateWindowExW(WS_EX_APPWINDOW, L"LevelGenWindow", L"Level Generator",
-        WS_OVERLAPPEDWINDOW,
+        WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         CW_USEDEFAULT, CW_USEDEFAULT, 554, 204, nullptr, nullptr, hInst, nullptr);
     if (!h) {
         wchar_t error[96] = {};

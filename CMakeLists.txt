@@ -26,6 +26,5 @@ else()
 endif()
 
 install(TARGETS LevelGen RUNTIME DESTINATION .)
-install(FILES resources/LevelGen-icon.png DESTINATION .)
 install(DIRECTORY docs/ DESTINATION docs)
 install(DIRECTORY examples/ DESTINATION examples)

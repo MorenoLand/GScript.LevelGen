@@ -1601,7 +1601,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR commandLine, int show)
     return 0;
 }
 #else
-int main(int argc, char** argv)
+int RunLevelGenCli(int argc, char** argv)
 {
     if (argc == 2 && std::strcmp(argv[1], "--verify-binary") == 0) return VerifyBinaryRoundTrip() ? 0 : 1;
     if (argc < 2 || std::strcmp(argv[1], "--cli") != 0) { std::fprintf(stderr, "Use: LevelGen --cli --image <map.png> --output <folder> --prefix <name> [--baseline <folder>] [--no-links]\n"); return 2; }
@@ -1618,4 +1618,10 @@ int main(int argc, char** argv)
     if (GenerateWorld(options, error)) return 0;
     std::fprintf(stderr, "%s\n", error.c_str()); return 1;
 }
+#ifndef LEVELGEN_PORTABLE_GUI
+int main(int argc, char** argv)
+{
+    return RunLevelGenCli(argc, argv);
+}
+#endif
 #endif

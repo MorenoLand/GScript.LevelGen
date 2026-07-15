@@ -1018,11 +1018,9 @@ static std::string GetApplicationRoot()
 {
     char path[MAX_PATH] = {};
     GetModuleFileNameA(nullptr, path, MAX_PATH);
-    char* separator = std::strrchr(path, '\\');
-    if (separator) *separator = '\0';
-    separator = std::strrchr(path, '\\');
-    if (separator) *separator = '\0';
-    return path;
+    std::filesystem::path directory = std::filesystem::path(path).parent_path();
+    if (std::filesystem::is_directory(directory / "examples")) return directory.string();
+    return directory.parent_path().string();
 }
 
 static bool EnsureDirectory(const std::string& path)

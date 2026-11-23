@@ -370,7 +370,7 @@ static void RenderSandStone(const MapImage& image, int onlyX = -1, int onlyY = -
         if ((n&&so)||(l&&r)||(l+n+se==3)||(l+so+ne==3)||(r+so+nw==3)||(r+n+sw==3)) stamp(p[0]);
         else if(k==2){if(l&&n)stamp(p[1]);else if(l&&so)stamp(p[2]);else if(so&&r)stamp(p[3]);else stamp(p[4]);}
         else if(k==1){if((n&&se)||(r&&nw))stamp(p[4]);else if((n&&sw)||(l&&ne))stamp(p[1]);else if((so&&nw)||(l&&se))stamp(p[2]);else if((so&&ne)||(r&&sw))stamp(p[3]);else if(n)stamp(p[(x&1)?6:5]);else if(l)stamp(p[7]);else if(so)stamp(p[(x&1)?9:8]);else stamp(p[10]);}
-        else {int d=nw+ne+sw+se;if(d==2){if(nw&&se)stamp(p[15]);else if(ne&&sw)stamp(p[16]);}else if(d==1){if(nw)stamp(p[11]);else if(sw)stamp(p[12]);else if(se)stamp(p[13]);else stamp(p[14]);}else if(IsColourNear(c,150,110,0))stamp(p[19+(x&1)+((y&1)<<1)]);else stamp(IsColourNear(c,113,82,0)?p[18]:p[17]);}
+        else {int d=nw+ne+sw+se;if(d==2){if(nw&&se)stamp(p[16]);else if(ne&&sw)stamp(p[15]);}else if(d==1){if(nw)stamp(p[11]);else if(sw)stamp(p[12]);else if(se)stamp(p[13]);else stamp(p[14]);}else if(IsColourNear(c,150,110,0))stamp(p[19+(x&1)+((y&1)<<1)]);else stamp(IsColourNear(c,113,82,0)?p[18]:p[17]);}
     }
 }
 static bool IsPuddle(COLORREF c)
@@ -426,11 +426,11 @@ static void RenderSwampsAndBushes(const MapImage& image, int onlyX = -1, int onl
         if (IsColourNear(c, 0, 106, 0)) {
             bool okay = true;
             for (int py = 0; py < 2; ++py) for (int px = 0; px < 2; ++px) { COLORREF q = image.At(x + px, y + py); if (!IsColourNear(q, 0, 106, 0) && !IsColourNear(q, 24, 140, 24)) okay = false; }
-            if (okay && CanStampOnGrass(swamp, x - 2, y)) BlitPattern(swamp, x - 2, y);
+            if (okay) BlitPattern(swamp, x - 2, y);
         } else if (IsColourNear(c, 0, 66, 0)) {
             bool okay = true;
             for (int py = 0; py < 2; ++py) for (int px = 0; px < 2; ++px) { COLORREF q = image.At(x + px, y + py); if (!IsColourNear(q, 0, 66, 0) && !IsColourNear(q, 24, 140, 24)) okay = false; }
-            if (okay && CanStampOnGrass(bush, x - 2, y)) BlitPattern(bush, x - 2, y);
+            if (okay) BlitPattern(bush, x - 2, y);
         }
     }
 }
@@ -933,12 +933,12 @@ static const ColourEntry kColourTable[] = {
     { 128,   0,   0, "mountains"    },
     { 255,   0,   0, "flowers"      },
     { 150, 110,   0, "sand"         },
+    {   0, 255, 255, "puddle"       },
+    {   0, 179, 179, "puddle-stone" },
     { 113,  82,   0, "sand-stones"  },
     {  83,  61,   0, "big-sand"     },
     {   0, 106,   0, "swamp"        },
     {   0,  66,   0, "bushes"       },
-    {   0, 255, 255, "puddle"       },
-    {   0, 179, 179, "puddle-stone" },
 };
 
 static bool IsTerrainSource(COLORREF color, bool cliffPass)
@@ -951,27 +951,28 @@ static void BuildTerrainMask(MapImage& image, BYTE r, BYTE g, BYTE b)
     bool cliffPass = r == 128 && g == 0 && b == 0;
     g_mask.assign(g_maskH, std::vector<char>(g_maskW));
     for (int x = 0; x < g_maskW; ++x) for (int y = 0; y < g_maskH; ++y) {
-        int x0 = x * 6 + 2 < image.width ? x * 6 + 2 : image.width - 1;
-        int x1 = x * 6 + 7 < image.width ? x * 6 + 7 : image.width - 1;
-        int y1 = y * 6 + 5 < image.height ? y * 6 + 5 : image.height - 1;
-        COLORREF a = image.At(x0, y * 6);
-        COLORREF b0 = image.At(x1, y * 6);
-        COLORREF c = image.At(x0, y1);
-        COLORREF d = image.At(x1, y1);
-        bool noTarget = !IsColourNear(a, r, g, b) && !IsColourNear(b0, r, g, b) && !IsColourNear(c, r, g, b) && !IsColourNear(d, r, g, b);
-        g_mask[y][x] = !noTarget && IsTerrainSource(a, cliffPass) && IsTerrainSource(b0, cliffPass) && IsTerrainSource(c, cliffPass) && IsTerrainSource(d, cliffPass);
-        if (g_mask[y][x]) {
-            COLORREF fill = a;
-            if (!IsColourNear(a, r, g, b) && !IsColourNear(b0, r, g, b)) {
-                if (IsColourNear(c, r, g, b)) fill = c;
-            }
-            int writeX0 = cliffPass ? x0 : x * 6;
-            int writeX1 = cliffPass ? x1 : (x * 6 + 5 < image.width ? x * 6 + 5 : image.width - 1);
-            for (int py = y * 6; py <= y1; ++py) for (int px = writeX0; px <= writeX1; ++px) {
-                size_t p = ((size_t)py * image.width + px) * 3;
-                image.rgb[p] = GetRValue(fill); image.rgb[p + 1] = GetGValue(fill); image.rgb[p + 2] = GetBValue(fill);
-            }
+        int ox = 2;
+        int xs[4] = { x * 6 + ox, x * 6 + 5 + ox, x * 6 + ox, x * 6 + 5 + ox };
+        int ys[4] = { y * 6, y * 6, y * 6 + 5, y * 6 + 5 };
+        bool target[4] = {}, source[4] = {};
+        COLORREF colour[4] = {};
+        for (int i = 0; i < 4; ++i) {
+            int px = xs[i], py = ys[i];
+            if (px < 0 || py < 0 || px >= image.width || py >= image.height) { target[i] = false; source[i] = true; continue; }
+            colour[i] = image.At(px, py);
+            target[i] = IsColourNear(colour[i], r, g, b);
+            source[i] = cliffPass
+                ? (IsColourNear(colour[i], 24, 140, 24) || IsColourNear(colour[i], 128, 0, 0) || IsColourNear(colour[i], 0, 106, 0))
+                : (IsColourNear(colour[i], 24, 140, 24) || IsColourNear(colour[i], 0, 0, 255));
         }
+        g_mask[y][x] = (target[0] || target[1] || target[2] || target[3]) && source[0] && source[1] && source[2] && source[3];
+        if (!g_mask[y][x]) continue;
+        int pick = target[0] ? 0 : target[1] ? 1 : target[2] ? 2 : 3;
+        for (int py = y * 6; py < y * 6 + 6 && py < image.height; ++py)
+            for (int px = x * 6 + 2; px < x * 6 + 8 && px < image.width; ++px) {
+                size_t p = ((size_t)py * image.width + px) * 3;
+                image.rgb[p] = GetRValue(colour[pick]); image.rgb[p + 1] = GetGValue(colour[pick]); image.rgb[p + 2] = GetBValue(colour[pick]);
+            }
     }
 }
 

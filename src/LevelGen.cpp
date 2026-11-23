@@ -1209,6 +1209,29 @@ static bool GenerateWorld(const GenOptions& opt, std::string& err)
         return false;
     }
 
+    // The original map object carries two columns of padding on the right. Its decoder
+    // leaves puddle-stone and sand-stones sentinels in the last two pixels of the top row,
+    // which the detail pass then stamps as a sand-stone corner. Reproduce that buffer.
+    {
+        MapImage padded;
+        padded.width = image.width + 2;
+        padded.height = image.height;
+        padded.rgb.assign((size_t)padded.width * padded.height * 3, 0);
+        for (int y = 0; y < image.height; ++y)
+            std::memcpy(&padded.rgb[(size_t)y * padded.width * 3], &image.rgb[(size_t)y * image.width * 3], (size_t)image.width * 3);
+        for (int y = 0; y < padded.height; ++y) {
+            size_t p = ((size_t)y * padded.width + image.width) * 3;
+            padded.rgb[p] = 24; padded.rgb[p + 1] = 140; padded.rgb[p + 2] = 24;
+            padded.rgb[p + 3] = 24; padded.rgb[p + 4] = 140; padded.rgb[p + 5] = 24;
+        }
+        if (padded.height > 0) {
+            size_t p = ((size_t)(padded.height - 1) * padded.width + image.width) * 3;
+            padded.rgb[p] = 0; padded.rgb[p + 1] = 179; padded.rgb[p + 2] = 179;
+            padded.rgb[p + 3] = 113; padded.rgb[p + 4] = 82; padded.rgb[p + 5] = 0;
+        }
+        image = std::move(padded);
+    }
+
     BuildLevelGrid(opt.outputFolder, opt.filePrefix, opt.createLinks, opt.baselineFolder);
     PaintMap(image);
 
@@ -1257,12 +1280,26 @@ struct DesignerState {
     int panStartX = 0, panStartY = 0, panScrollX = 0, panScrollY = 0;
     COLORREF selected = RGB(24, 140, 24);
     int selectedPalette = 0, tooltipPalette = -1, tooltipX = 0, tooltipY = 0;
+    RECT tooltipRect{};
+    bool trackingMouse = false;
     std::vector<COLORREF> pixels = std::vector<COLORREF>(32 * 32, RGB(24, 140, 24));
 };
 
 static DesignerState g_designer;
 static const COLORREF kDesignerColours[] = { RGB(24,140,24), RGB(181,239,189), RGB(0,0,255), RGB(128,0,0), RGB(255,0,0), RGB(150,110,0), RGB(113,82,0), RGB(83,61,0), RGB(0,106,0), RGB(0,66,0), RGB(0,255,255), RGB(0,179,179) };
 static const wchar_t* kDesignerColourNames[] = { L"Grass", L"Trees", L"Water", L"Mountains", L"Flowers", L"Sand", L"Sand stones", L"Big sand", L"Swamp", L"Bushes", L"Puddle", L"Puddle stone" };
+
+static RECT DesignerTooltipRect(HWND window, int palette, int x, int y)
+{
+    RECT rect{};
+    if (palette < 0) return rect;
+    HDC dc = GetDC(window);
+    SIZE size{};
+    GetTextExtentPoint32W(dc, kDesignerColourNames[palette], (int)wcslen(kDesignerColourNames[palette]), &size);
+    ReleaseDC(window, dc);
+    SetRect(&rect, x + 12, y + 12, x + size.cx + 20, y + size.cy + 18);
+    return rect;
+}
 
 static int DesignerCellSize()
 {
@@ -1378,8 +1415,20 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_MOUSEMOVE:
         {
             int x = (int)(short)LOWORD(lp), y = (int)(short)HIWORD(lp);
+            if (!g_designer.trackingMouse) {
+                TRACKMOUSEEVENT track{ sizeof(track), TME_LEAVE, h, 0 };
+                if (TrackMouseEvent(&track)) g_designer.trackingMouse = true;
+            }
             int hovered = y >= paletteY && y < paletteY + 24 && x >= 20 && x < 20 + (int)(sizeof(kDesignerColours) / sizeof(kDesignerColours[0])) * 30 ? (x - 20) / 30 : -1;
-            if (hovered != g_designer.tooltipPalette || x != g_designer.tooltipX || y != g_designer.tooltipY) { g_designer.tooltipPalette = hovered; g_designer.tooltipX = x; g_designer.tooltipY = y; InvalidateRect(h, nullptr, FALSE); }
+            if (hovered != g_designer.tooltipPalette || x != g_designer.tooltipX || y != g_designer.tooltipY) {
+                RECT old = g_designer.tooltipRect;
+                g_designer.tooltipPalette = hovered;
+                g_designer.tooltipX = x;
+                g_designer.tooltipY = y;
+                g_designer.tooltipRect = DesignerTooltipRect(h, hovered, x, y);
+                if (!IsRectEmpty(&old)) InvalidateRect(h, &old, TRUE);
+                if (!IsRectEmpty(&g_designer.tooltipRect)) InvalidateRect(h, &g_designer.tooltipRect, FALSE);
+            }
         }
         if (g_designer.panning) {
             g_designer.scrollX = g_designer.panScrollX - ((int)(short)LOWORD(lp) - g_designer.panStartX);
@@ -1387,6 +1436,14 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
             UpdateDesignerScrollbars(h); InvalidateRect(h, nullptr, FALSE); return 0;
         }
         if (wp & MK_LBUTTON) PaintDesignerCell((int)(short)LOWORD(lp), (int)(short)HIWORD(lp));
+        return 0;
+    case WM_MOUSELEAVE:
+        g_designer.trackingMouse = false;
+        if (g_designer.tooltipPalette >= 0) {
+            if (!IsRectEmpty(&g_designer.tooltipRect)) InvalidateRect(h, &g_designer.tooltipRect, TRUE);
+            g_designer.tooltipPalette = -1;
+            SetRectEmpty(&g_designer.tooltipRect);
+        }
         return 0;
     case WM_LBUTTONUP: ReleaseCapture(); return 0;
     case WM_RBUTTONDOWN:
@@ -1442,8 +1499,9 @@ static LRESULT CALLBACK DesignerWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         }
         RestoreDC(dc, saved);
         if (g_designer.tooltipPalette >= 0) {
+            g_designer.tooltipRect = DesignerTooltipRect(h, g_designer.tooltipPalette, g_designer.tooltipX, g_designer.tooltipY);
             const wchar_t* label = kDesignerColourNames[g_designer.tooltipPalette]; SIZE size{}; GetTextExtentPoint32W(dc, label, (int)wcslen(label), &size);
-            RECT tooltip{g_designer.tooltipX + 12, g_designer.tooltipY + 12, g_designer.tooltipX + size.cx + 20, g_designer.tooltipY + size.cy + 18}; FillRect(dc, &tooltip, (HBRUSH)GetStockObject(WHITE_BRUSH)); FrameRect(dc, &tooltip, (HBRUSH)GetStockObject(BLACK_BRUSH)); TextOutW(dc, tooltip.left + 4, tooltip.top + 3, label, (int)wcslen(label));
+            RECT tooltip = g_designer.tooltipRect; FillRect(dc, &tooltip, (HBRUSH)GetStockObject(WHITE_BRUSH)); FrameRect(dc, &tooltip, (HBRUSH)GetStockObject(BLACK_BRUSH)); TextOutW(dc, tooltip.left + 4, tooltip.top + 3, label, (int)wcslen(label));
         }
         EndPaint(h, &ps); return 0;
     }
